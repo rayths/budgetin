@@ -2,16 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import Navbar from '../components/navbar/NavbarBottom';
 import { Camera, Upload, X, FileImage, Settings } from 'lucide-react';
 
-// Mock Navbar component - replace with your actual navbar
-
-/*
-const Navbar = () => (
-  <nav className="bg-gray-900 p-4 text-white">
-    <h1 className="text-lg font-bold">Budget Tracker</h1>
-  </nav>
-);
-*/
-
 // API Key Configuration Component
 const ApiKeyConfig = ({ apiKey, setApiKey, isConfigOpen, setIsConfigOpen }) => {
   const [tempApiKey, setTempApiKey] = useState(apiKey);
