@@ -451,18 +451,24 @@ const Statistics = () => {
   const [apiKey, setApiKey] = useState('AIzaSyAZLoO1J6mJ1D8ffMrFJwIUNOwXR78tilk');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false); // NEW: Flag untuk track apakah data sudah pernah diload
 
-  // Load API key and financial data
+  // Load API key and financial data only once
   useEffect(() => {
-    loadFinancialData();
-  }, []);
+    if (!dataLoaded) { // FIXED: Hanya load data jika belum pernah diload
+      loadFinancialData();
+    }
+  }, [dataLoaded]); // FIXED: Dependency pada dataLoaded
 
-  // Save to storage when transactions change (similar to paste.txt pattern)
+  // Save to storage when transactions change
   useEffect(() => {
-    if (!initialLoadComplete) return; // Skip initial render
+    if (!initialLoadComplete || !dataLoaded) return; // FIXED: Skip jika belum selesai initial load
+    
+    // FIXED: Hanya save jika ada perubahan setelah initial load selesai
+    console.log('Saving transactions to storage:', transactions.length);
     
     if (transactions.length > 0) {
-      // Save to both storages for redundancy
+      // Save to IndexedDB
       saveToIndexedDB(transactions)
         .then(success => {
           console.log("Data saved to IndexedDB:", success);
@@ -470,22 +476,10 @@ const Statistics = () => {
         .catch(error => {
           console.error("Error in IndexedDB save:", error);
         });
-    } else {
-      // If there are no transactions, clear storage
-      try {
-        initIndexedDB().then(db => {
-          const transaction = db.transaction(["transactions"], "readwrite");
-          const store = transaction.objectStore("transactions");
-          store.clear();
-          console.log("Data cleared from IndexedDB");
-        });
-      } catch (error) {
-        console.error("Error clearing IndexedDB:", error);
-      }
     }
-  }, [transactions, initialLoadComplete]);
+  }, [transactions, initialLoadComplete, dataLoaded]); // FIXED: Tambah dataLoaded ke dependency
 
-  // Initialize IndexedDB (updated pattern from paste.txt)
+  // Initialize IndexedDB
   const initIndexedDB = () => {
     return new Promise((resolve, reject) => {
       try {
@@ -503,7 +497,6 @@ const Statistics = () => {
         
         request.onupgradeneeded = (event) => {
           const db = event.target.result;
-          // Buat object store jika belum ada
           if (!db.objectStoreNames.contains("transactions")) {
             db.createObjectStore("transactions", { keyPath: "id" });
           }
@@ -515,7 +508,7 @@ const Statistics = () => {
     });
   };
 
-  // Load transactions from IndexedDB (updated pattern from paste.txt)
+  // Load transactions from IndexedDB
   const loadFromIndexedDB = async () => {
     try {
       const db = await initIndexedDB();
@@ -525,7 +518,9 @@ const Statistics = () => {
       
       return new Promise((resolve, reject) => {
         request.onsuccess = (event) => {
-          resolve(event.target.result || []);
+          const result = event.target.result || [];
+          console.log("Loaded from IndexedDB:", result.length, "transactions");
+          resolve(result);
         };
         
         request.onerror = (event) => {
@@ -539,93 +534,97 @@ const Statistics = () => {
     }
   };
 
-  // Save transactions to IndexedDB (updated pattern from paste.txt)
+  // Save transactions to IndexedDB
   const saveToIndexedDB = async (transactionsData) => {
     try {
       const db = await initIndexedDB();
       const transaction = db.transaction(["transactions"], "readwrite");
       const store = transaction.objectStore("transactions");
       
-      // Hapus semua data yang ada
-      store.clear();
-      
-      // Tambahkan semua transaksi
-      transactionsData.forEach(t => {
-        store.add(t);
+      // Clear existing data
+      await new Promise((resolve, reject) => {
+        const clearRequest = store.clear();
+        clearRequest.onsuccess = () => resolve();
+        clearRequest.onerror = () => reject(clearRequest.error);
       });
       
-      return new Promise((resolve, reject) => {
-        transaction.oncomplete = () => {
-          resolve(true);
-        };
-        
-        transaction.onerror = (event) => {
-          console.error("Error saving to IndexedDB:", event.target.error);
-          reject(event.target.error);
-        };
-      });
+      // Add all transactions
+      for (const t of transactionsData) {
+        await new Promise((resolve, reject) => {
+          const addRequest = store.add(t);
+          addRequest.onsuccess = () => resolve();
+          addRequest.onerror = () => reject(addRequest.error);
+        });
+      }
+      
+      console.log("Successfully saved", transactionsData.length, "transactions to IndexedDB");
+      return true;
     } catch (error) {
       console.error("Failed to save to IndexedDB:", error);
-      // Note: In Claude artifacts, localStorage is not available
-      // This would be the fallback in production:
-      // try {
-      //   localStorage.setItem('transactions', JSON.stringify(transactionsData));
-      // } catch (localError) {
-      //   console.error("Error saving to localStorage:", localError);
-      // }
       return false;
     }
   };
 
-  // Load and analyze financial data (updated pattern from paste.txt)
+  // Load and analyze financial data - hanya dijalankan sekali
   const loadFinancialData = async () => {
+    if (dataLoaded) { // Jika data sudah diload, jangan load lagi
+      console.log("Data already loaded, skipping...");
+      return true;
+    }
+
+    console.log("Loading financial data for the first time...");
+    
     try {
-      // Try to load from IndexedDB first
-      let loadedTransactions = [];
-      try {
-        const indexedDBData = await loadFromIndexedDB();
-        if (indexedDBData && indexedDBData.length > 0) {
-          loadedTransactions = indexedDBData;
-          console.log("Data loaded from IndexedDB:", loadedTransactions);
-        }
-      } catch (indexedDBError) {
-        console.error("Error loading from IndexedDB:", indexedDBError);
-      }
+      // Load existing transactions from IndexedDB
+      let loadedTransactions = await loadFromIndexedDB();
+      console.log("Loaded transactions from storage:", loadedTransactions.length);
       
-      // If no data in IndexedDB, use initial mock data
-      if (loadedTransactions.length === 0) {
-        console.log("No data found, using initial mock data");
-        loadedTransactions = [
-          { id: "1", type: 'Pemasukan', amount: 5000000, description: 'Gaji', date: '2024-01-15' },
-          { id: "2", type: 'Pengeluaran', amount: 500000, description: 'Belanja Bulanan', date: '2024-01-20' },
-          { id: "3", type: 'Pengeluaran', amount: 200000, description: 'Transport', date: '2024-01-25' },
-          { id: "4", type: 'Pemasukan', amount: 1000000, description: 'Freelance', date: '2024-02-01' },
-          { id: "5", type: 'Pengeluaran', amount: 300000, description: 'Makan', date: '2024-02-05' }
-        ];
-        
-        // Save to IndexedDB for next time
-        await saveToIndexedDB(loadedTransactions);
-      }
-      
+      // Validate transactions only if there are any
       if (loadedTransactions.length > 0) {
-        // Ensure all transactions have proper structure
         const validatedTransactions = loadedTransactions.map(t => ({
-          id: t.id || Date.now().toString() + Math.random().toString(36).substr(2, 5),
+          id: t.id || `trans_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
           type: t.type || 'Pengeluaran',
           amount: parseFloat(t.amount || 0),
           description: t.description || 'Tidak ada keterangan',
-          date: t.date || new Date().toISOString()
+          date: t.date || new Date().toISOString().split('T')[0]
         }));
         
+        console.log("Setting transactions:", validatedTransactions.length);
         setTransactions(validatedTransactions);
         analyzeFinancialData(validatedTransactions);
+      } else {
+        // No existing data, start with empty transactions
+        console.log("No existing data, starting with empty transactions");
+        setTransactions([]);
+        setFinancialSummary({
+          totalIncome: 0,
+          totalExpense: 0,
+          balance: 0,
+          transactionCount: 0,
+          topIncomeCategories: [],
+          topExpenseCategories: []
+        });
       }
       
+      // Set flags bahwa data sudah diload
+      setDataLoaded(true);
       setInitialLoadComplete(true);
+      
       return true;
     } catch (error) {
       console.error("Error in loadFinancialData:", error);
+      setDataLoaded(true); // Set flag meskipun error untuk mencegah loop
       setInitialLoadComplete(true);
+      // Start with empty state on error
+      setTransactions([]);
+      setFinancialSummary({
+        totalIncome: 0,
+        totalExpense: 0,
+        balance: 0,
+        transactionCount: 0,
+        topIncomeCategories: [],
+        topExpenseCategories: []
+      });
       return false;
     }
   };
@@ -688,36 +687,51 @@ const Statistics = () => {
     setQuery(`Saya baru saja berbelanja di ${data.storeName} dengan total ${formatCurrency(data.total)}. Items yang dibeli: ${data.items.map(item => item.name).join(', ')}. Tolong analisis pembelian ini dan berikan saran finansial.`);
   };
 
-  // Add receipt data to transactions (updated pattern from paste.txt)
+  // FIXED: Add receipt data to transactions - tanpa reload data
   const addReceiptToTransactions = async (receipt) => {
-    // Generate unique ID using timestamp and random string
+    console.log("Adding receipt to transactions:", receipt);
+    
+    // Generate unique ID
     const newTransaction = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      id: `receipt_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       type: 'Pengeluaran',
       amount: parseFloat(receipt.total),
       description: `Belanja di ${receipt.storeName}`,
       date: receipt.date
     };
 
+    // FIXED: Langsung update transactions tanpa memanggil loadFinancialData
     const updatedTransactions = [...transactions, newTransaction];
-    setTransactions(updatedTransactions);
+    console.log("Updated transactions count:", updatedTransactions.length);
     
-    // Analyze financial data with updated transactions
+    setTransactions(updatedTransactions);
     analyzeFinancialData(updatedTransactions);
     
     // Clear receipt data after adding
     setReceiptData(null);
     
-    // Show success message with transaction details
+    // Show success message
     alert(`Receipt berhasil ditambahkan!\n\nDetail Transaksi:\nID: ${newTransaction.id}\nTipe: ${newTransaction.type}\nJumlah: ${formatCurrency(newTransaction.amount)}\nDeskripsi: ${newTransaction.description}\nTanggal: ${newTransaction.date}\n\nTotal transaksi: ${updatedTransactions.length}`);
     
-    // Log untuk debugging
     console.log('Transaksi baru ditambahkan:', newTransaction);
     console.log('Total transaksi sekarang:', updatedTransactions.length);
-    console.log('Semua transaksi:', updatedTransactions);
   };
 
-  // Mock AI response function (replace with actual AI API call)
+  // FIXED: Manual reload data - reset semua dan load ulang
+  const manualReloadData = async () => {
+    console.log("Manual reload triggered");
+    setDataLoaded(false);
+    setInitialLoadComplete(false);
+    setTransactions([]);
+    setFinancialSummary(null);
+    
+    // Tunggu sebentar lalu load ulang
+    setTimeout(() => {
+      loadFinancialData();
+    }, 100);
+  };
+
+  // Mock AI response function
   const askGroq = async () => {
     if (!query.trim()) return;
     
@@ -833,13 +847,24 @@ Silakan tanyakan hal spesifik yang ingin Anda ketahui tentang keuangan Anda!`;
                     <p className="text-sm">{formatCurrency(financialSummary.balance)}</p>
                   </div>
                 </div>
+                {/* FIXED: Tambah debug info dan manual reload button */}
+                <div className="mt-2 text-xs">
+                  <p className="text-yellow-400">🔍 Debug: {transactions.length} transaksi dimuat | Data loaded: {dataLoaded ? 'Ya' : 'Tidak'}</p>
+                  <button 
+                    className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-2 py-1 rounded mt-1" 
+                    onClick={manualReloadData}
+                  >
+                    🔄 Reset & Muat Ulang Data
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="mb-4">
                 <p className="text-yellow-500 text-sm mb-2">Memuat data keuangan...</p>
+                <p className="text-xs text-gray-400 mb-2">Status: DataLoaded={dataLoaded ? 'Ya' : 'Tidak'} | InitialLoad={initialLoadComplete ? 'Ya' : 'Tidak'}</p>
                 <button 
                   className="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg" 
-                  onClick={loadFinancialData}
+                  onClick={manualReloadData}
                 >
                   Muat Ulang Data
                 </button>
