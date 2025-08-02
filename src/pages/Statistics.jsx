@@ -9,48 +9,30 @@ const ApiKeyConfig = ({ apiKey, setApiKey, isConfigOpen, setIsConfigOpen }) => {
   const handleSave = () => {
     setApiKey(tempApiKey);
     setIsConfigOpen(false);
-    // Note: API key tersimpan dalam state selama session
-    // Dalam production bisa menggunakan IndexedDB atau localStorage
+    
+    // Save to localStorage for persistence
+    try {
+      localStorage.setItem('gemini_api_key', tempApiKey);
+      console.log('API Key saved successfully');
+    } catch (error) {
+      console.error('Error saving API key:', error);
+    }
   };
 
-  if (!isConfigOpen) return null;
+  // Load API key from localStorage on component mount
+  useEffect(() => {
+    try {
+      const savedApiKey = localStorage.getItem('gemini_api_key');
+      if (savedApiKey && savedApiKey !== apiKey) {
+        setApiKey(savedApiKey);
+        setTempApiKey(savedApiKey);
+      }
+    } catch (error) {
+      console.error('Error loading API key:', error);
+    }
+  }, [apiKey, setApiKey]);
 
-  return (
-    <div className="mb-4 bg-gray-800 rounded-lg p-4 border border-gray-600">
-      <h3 className="text-sm font-medium text-blue-300 mb-3">Konfigurasi API Key</h3>
-      <div className="space-y-3">
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Google Gemini API Key</label>
-          <input
-            type="password"
-            value={tempApiKey}
-            onChange={(e) => setTempApiKey(e.target.value)}
-            placeholder="Masukkan API Key Gemini..."
-            className="w-full p-2 rounded bg-gray-700 text-white text-xs border border-gray-600 focus:border-blue-500"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Dapatkan API key di <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400">Google AI Studio</a>
-            <br />
-            <span className="text-green-400">💾 Data tersimpan dengan fallback ke localStorage</span>
-          </p>
-        </div>
-        <div className="flex space-x-2">
-          <button
-            onClick={handleSave}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
-          >
-            Simpan
-          </button>
-          <button
-            onClick={() => setIsConfigOpen(false)}
-            className="bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-1 rounded"
-          >
-            Batal
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return null;
 };
 
 // Komponen animasi mengetik
@@ -791,21 +773,7 @@ Silakan tanyakan hal spesifik yang ingin Anda ketahui tentang keuangan Anda!`;
         <div className="w-full">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl text-center text-blue-500">Tanya AI</h1>
-            <button
-              onClick={() => setIsConfigOpen(!isConfigOpen)}
-              className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg transition-colors"
-            >
-              <Settings size={16} className="text-gray-300" />
-            </button>
           </div>
-
-          {/* API Key Configuration */}
-          <ApiKeyConfig 
-            apiKey={apiKey}
-            setApiKey={setApiKey}
-            isConfigOpen={isConfigOpen}
-            setIsConfigOpen={setIsConfigOpen}
-          />
           
           {/* Financial Data Status */}
           <div className="mb-4 text-center">
